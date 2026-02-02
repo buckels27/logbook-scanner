@@ -27,9 +27,37 @@ export default async function handler(req, res) {
       return res.status(response.status).json(data);
     }
 
+    // Try to extract and validate JSON from the response
+    // Claude sometimes adds text before/after the JSON array
+    const responseText = data.content?.[0]?.text || '';
+    
+    // Find JSON array in the response
+    const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+    
+    if (jsonMatch) {
+      try {
+        // Validate it's proper JSON
+        const parsed = JSON.parse(jsonMatch[0]);
+        
+        // Return a clean response with just the JSON
+        return res.status(200).json({
+          content: [{
+            type: 'text',
+            text: JSON.stringify(parsed)
+          }]
+        });
+      } catch (parseErr) {
+        // JSON found but invalid - return original for debugging
+        return res.status(200).json(data);
+      }
+    }
+    
+    // No JSON array found - return original response
     return res.status(200).json(data);
+    
   } catch (error) {
     console.error('Proxy error:', error);
-    return res.status(500).json({ error: 'Failed to process request' });
+    return res.status(500).json({ error: 'Failed to process request: ' + error.message });
   }
 }
+
