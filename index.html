@@ -175,75 +175,21 @@
         return warnings;
       };
 
-      const extractionPrompt = `You are extracting flight log entries from a scanned page of a 1989 UK CAA Pooleys PPL flying logbook.
+      // IMPORTANT: Prompt explicitly demands JSON-only output
+      const extractionPrompt = `Extract flight entries from this logbook page. Return ONLY a JSON array, no other text.
 
-The Pooleys logbook has these columns (left to right across two pages):
-LEFT PAGE:
-- Date (DD/MM/YY or DD/MM/YYYY format)
-- Aircraft Type (e.g., PA28, C152, C172)
-- Aircraft Registration (e.g., G-ABCD)
-- Captain/PIC Name
-- Holder's Operating Capacity (P1, P2, P/UT for under training)
-- From (departure aerodrome - ICAO code or name)
-- To (arrival aerodrome - ICAO code or name)
+Each entry must be a JSON object with these exact keys:
+{"date":"YYYY-MM-DD","aircraft_type":"PA28","registration":"G-XXXX","pic_name":"Name","capacity":"P1","from_icao":"EGXX","to_icao":"EGXX","se_day":1.5,"se_night":null,"me_day":null,"me_night":null,"instrument_actual":null,"instrument_sim":null,"pic_time":1.5,"dual_time":null,"copilot_time":null,"instructor_time":null,"landings_day":1,"landings_night":null,"remarks":"text","confidence":5,"uncertain_fields":[]}
 
-RIGHT PAGE:
-- Single Engine: Day (hours:mins)
-- Single Engine: Night (hours:mins)  
-- Multi Engine: Day (hours:mins)
-- Multi Engine: Night (hours:mins)
-- Instrument: Actual (hours:mins)
-- Instrument: Simulated/Hood (hours:mins)
-- P1/PIC time
-- Dual time
-- Co-pilot time
-- Instructor time
-- Day Landings (number)
-- Night Landings (number)
-- Remarks/Notes
+Rules:
+- Times in DECIMAL hours (1:30 = 1.5, 0:45 = 0.75, 0:30 = 0.5)
+- Dates as YYYY-MM-DD (assume 19xx for years 89-99, 20xx for 00-25)
+- Include G- prefix on registrations
+- confidence: 5=clear, 4=mostly clear, 3=some guessing, 2=uncertain, 1=very poor
+- Use null for empty fields
+- Extract ALL visible rows
 
-Extract EVERY flight entry visible. For each flight, return a JSON object.
-
-CRITICAL RULES:
-1. Times should be in decimal hours (e.g., 1:30 = 1.5, 0:45 = 0.75)
-2. Dates should be in YYYY-MM-DD format (convert from DD/MM/YY - assume 19xx for years 89-99, 20xx for 00-25)
-3. Registration should include the G- prefix
-4. Convert aerodrome names to ICAO codes where you recognise them
-5. If a field is empty or illegible, use null
-6. Include ALL rows even if partially filled
-
-Return ONLY a JSON array of objects, no other text. Each object should have these exact keys:
-{
-  "date": "YYYY-MM-DD",
-  "aircraft_type": "string",
-  "registration": "G-XXXX",
-  "pic_name": "string",
-  "capacity": "P1|P2|PUT|DUAL",
-  "from_icao": "XXXX",
-  "to_icao": "XXXX", 
-  "se_day": number or null,
-  "se_night": number or null,
-  "me_day": number or null,
-  "me_night": number or null,
-  "instrument_actual": number or null,
-  "instrument_sim": number or null,
-  "pic_time": number or null,
-  "dual_time": number or null,
-  "copilot_time": number or null,
-  "instructor_time": number or null,
-  "landings_day": number or null,
-  "landings_night": number or null,
-  "remarks": "string or null",
-  "confidence": 1-5,
-  "uncertain_fields": ["field1", "field2"]
-}
-
-CONFIDENCE SCORING (1-5):
-5 = All fields clearly legible, high confidence
-4 = Most fields clear, minor uncertainty on 1-2 fields
-3 = Several fields hard to read or guessed from context
-2 = Significant uncertainty, multiple guesses made
-1 = Very poor legibility, most fields uncertain`;
+CRITICAL: Output ONLY the JSON array starting with [ and ending with ]. No explanations, no text before or after.`;
 
       const processFiles = async (files) => {
         const newPages = [];
@@ -290,7 +236,6 @@ CONFIDENCE SCORING (1-5):
           const base64Data = page.base64.split(',')[1];
           const mediaType = page.base64.match(/data:([^;]+);/)?.[1] || 'image/jpeg';
           
-          // Use our proxy endpoint instead of calling Anthropic directly
           const response = await fetch('/api/extract', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -314,13 +259,39 @@ CONFIDENCE SCORING (1-5):
           }
           
           const responseText = data.content?.[0]?.text || '';
+          console.log('API Response:', responseText.substring(0, 200)); // Debug log
           
           let extractedEntries;
-          const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-          if (jsonMatch) {
-            extractedEntries = JSON.parse(jsonMatch[0]);
-          } else {
-            throw new Error('No JSON array found in response');
+          
+          // Try multiple ways to find JSON
+          // 1. Try parsing the whole response as JSON
+          try {
+            extractedEntries = JSON.parse(responseText);
+          } catch (e1) {
+            // 2. Try to find JSON array in the response
+            const jsonMatch = responseText.match(/\[\s*\{[\s\S]*\}\s*\]/);
+            if (jsonMatch) {
+              try {
+                extractedEntries = JSON.parse(jsonMatch[0]);
+              } catch (e2) {
+                // 3. Try to find and fix common JSON issues
+                let cleaned = jsonMatch[0]
+                  .replace(/,\s*\]/g, ']')  // Remove trailing commas
+                  .replace(/,\s*\}/g, '}'); // Remove trailing commas in objects
+                try {
+                  extractedEntries = JSON.parse(cleaned);
+                } catch (e3) {
+                  console.error('JSON parse attempts failed:', responseText);
+                  throw new Error('Could not parse response as JSON. Response started with: ' + responseText.substring(0, 100));
+                }
+              }
+            } else {
+              throw new Error('No JSON array found in response. Response: ' + responseText.substring(0, 100));
+            }
+          }
+          
+          if (!Array.isArray(extractedEntries)) {
+            throw new Error('Response was not an array');
           }
           
           // Remove old entries for this page first
