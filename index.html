@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Logbook Scanner - Pooleys PPL to logbook.aero</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { 
+      font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+      min-height: 100vh;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const LogbookScanner = () => {
+      const [pages, setPages] = useState([]);
+      const [entries, setEntries] = useState([]);
+      const [processing, setProcessing] = useState(false);
+      const [currentPage, setCurrentPage] = useState(null);
+      const [error, setError] = useState(null);
+      const [view, setView] = useState('upload');
+      const [dragOver, setDragOver] = useState(false);
+      const [timeEstimate, setTimeEstimate] = useState(null);
+      const [autoProcess, setAutoProcess] = useState(false);
+
+      // UK airfield name to ICAO mapping
+      const ukAirfields = {
+        'heathrow': 'EGLL', 'lhr': 'EGLL',
+        'gatwick': 'EGKK', 'lgw': 'EGKK',
+        'stansted': 'EGSS', 'stn': 'EGSS',
+        'luton': 'EGGW', 'ltn': 'EGGW',
+        'city': 'EGLC', 'london city': 'EGLC', 'lcy': 'EGLC',
+        'biggin': 'EGKB', 'biggin hill': 'EGKB',
+        'stapleford': 'EGSG', 'stapleford abbotts': 'EGSG',
+        'elstree': 'EGTR',
+        'denham': 'EGLD',
+        'white waltham': 'EGLM', 'waltham': 'EGLM',
+        'fairoaks': 'EGTF',
+        'redhill': 'EGKR',
+        'rochester': 'EGTO',
+        'southend': 'EGMC',
+        'lydd': 'EGMD',
+        'headcorn': 'EGKH',
+        'panshanger': 'EGLG',
+        'north weald': 'EGSX',
+        'andrewsfield': 'EGSL',
+        'earls colne': 'EGSR',
+        'shoreham': 'EGKA',
+        'goodwood': 'EGHR', 'chichester': 'EGHR',
+        'bembridge': 'EGHJ',
+        'sandown': 'EGHN',
+        'lee on solent': 'EGHF', 'lee': 'EGHF',
+        'bournemouth': 'EGHH',
+        'hurn': 'EGHH',
+        'compton abbas': 'EGHA',
+        'exeter': 'EGTE',
+        'plymouth': 'EGHD',
+        'newquay': 'EGHQ',
+        'lands end': 'EGHC',
+        'isles of scilly': 'EGHE', 'scilly': 'EGHE',
+        'bristol': 'EGGD',
+        'filton': 'EGTG',
+        'cardiff': 'EGFF',
+        'swansea': 'EGFH',
+        'haverfordwest': 'EGFE',
+        'gloucester': 'EGBJ', 'gloucestershire': 'EGBJ', 'staverton': 'EGBJ',
+        'kemble': 'EGBP', 'cotswold': 'EGBP',
+        'birmingham': 'EGBB', 'bhx': 'EGBB',
+        'coventry': 'EGBE',
+        'east midlands': 'EGNX', 'ema': 'EGNX',
+        'nottingham': 'EGBN', 'tollerton': 'EGBN',
+        'leicester': 'EGBG',
+        'sywell': 'EGBK',
+        'turweston': 'EGBT',
+        'wellesbourne': 'EGBW',
+        'wolverhampton': 'EGBO', 'halfpenny green': 'EGBO',
+        'tatenhill': 'EGBM',
+        'derby': 'EGBD',
+        'norwich': 'EGSH',
+        'cambridge': 'EGSC',
+        'ipswich': 'EGSE',
+        'old buckenham': 'EGSV',
+        'seething': 'EGSJ',
+        'manchester': 'EGCC', 'man': 'EGCC',
+        'liverpool': 'EGGP', 'lpl': 'EGGP',
+        'leeds bradford': 'EGNM', 'leeds': 'EGNM', 'lba': 'EGNM',
+        'newcastle': 'EGNT', 'ncl': 'EGNT',
+        'durham tees valley': 'EGNV', 'teesside': 'EGNV',
+        'humberside': 'EGNJ',
+        'doncaster': 'EGCN',
+        'blackpool': 'EGNH',
+        'barton': 'EGCB',
+        'woodford': 'EGCD',
+        'sherburn': 'EGCJ',
+        'full sutton': 'EGNU',
+        'edinburgh': 'EGPH', 'edi': 'EGPH',
+        'glasgow': 'EGPF', 'gla': 'EGPF',
+        'prestwick': 'EGPK',
+        'aberdeen': 'EGPD', 'abd': 'EGPD',
+        'inverness': 'EGPE',
+        'dundee': 'EGPN',
+        'perth': 'EGPT', 'scone': 'EGPT',
+        'cumbernauld': 'EGPG',
+        'fife': 'EGPJ',
+        'oban': 'EGEO',
+        'wick': 'EGPC',
+        'kirkwall': 'EGPA',
+        'sumburgh': 'EGPB',
+        'stornoway': 'EGPO',
+        'belfast city': 'EGAC', 'george best': 'EGAC',
+        'belfast intl': 'EGAA', 'aldergrove': 'EGAA',
+        'city of derry': 'EGAE', 'derry': 'EGAE',
+        'enniskillen': 'EGAB',
+        'jersey': 'EGJJ',
+        'guernsey': 'EGJB',
+        'alderney': 'EGJA',
+        'isle of man': 'EGNS', 'ronaldsway': 'EGNS',
+        'ww': 'EGLM', 'bh': 'EGKB', 'sf': 'EGSG', 'el': 'EGTR', 'dh': 'EGLD',
+        'fo': 'EGTF', 'rh': 'EGKR', 'sh': 'EGKA', 'ro': 'EGTO', 'hc': 'EGKH',
+        'nw': 'EGSX', 'ca': 'EGHA', 'gw': 'EGHR',
+      };
+
+      const normalizeAirfield = (code) => {
+        if (!code) return code;
+        const lower = code.toLowerCase().trim();
+        if (/^eg[a-z]{2}$/i.test(code)) return code.toUpperCase();
+        return ukAirfields[lower] || code.toUpperCase();
+      };
+
+      const validateTimes = (entry) => {
+        const totalFlight = (entry.se_day || 0) + (entry.se_night || 0) + (entry.me_day || 0) + (entry.me_night || 0);
+        const functionTime = (entry.pic_time || 0) + (entry.dual_time || 0) + (entry.copilot_time || 0) + (entry.instructor_time || 0);
+        if (totalFlight > 0 && functionTime > 0 && Math.abs(totalFlight - functionTime) > 0.1) {
+          return { valid: false, message: `Flight time (${totalFlight.toFixed(1)}) ≠ Function time (${functionTime.toFixed(1)})` };
+        }
+        return { valid: true };
+      };
+
+      const getRegistrationWarnings = () => {
+        const regTypeMap = {};
+        const warnings = [];
+        entries.forEach(entry => {
+          if (entry.registration && entry.aircraft_type) {
+            const reg = entry.registration.toUpperCase();
+            const type = entry.aircraft_type.toUpperCase();
+            if (!regTypeMap[reg]) {
+              regTypeMap[reg] = { types: new Set(), entries: [] };
+            }
+            regTypeMap[reg].types.add(type);
+            regTypeMap[reg].entries.push(entry.id);
+          }
+        });
+        Object.entries(regTypeMap).forEach(([reg, data]) => {
+          if (data.types.size > 1) {
+            warnings.push({
+              registration: reg,
+              types: Array.from(data.types),
+              entryIds: data.entries,
+              message: `${reg} appears with different types: ${Array.from(data.types).join(', ')}`
+            });
+          }
+        });
+        return warnings;
+      };
+
+      const extractionPrompt = `You are extracting flight log entries from a scanned page of a 1989 UK CAA Pooleys PPL flying logbook.
+
+The Pooleys logbook has these columns (left to right across two pages):
+LEFT PAGE:
+- Date (DD/MM/YY or DD/MM/YYYY format)
+- Aircraft Type (e.g., PA28, C152, C172)
+- Aircraft Registration (e.g., G-ABCD)
+- Captain/PIC Name
+- Holder's Operating Capacity (P1, P2, P/UT for under training)
+- From (departure aerodrome - ICAO code or name)
+- To (arrival aerodrome - ICAO code or name)
+
+RIGHT PAGE:
+- Single Engine: Day (hours:mins)
+- Single Engine: Night (hours:mins)  
+- Multi Engine: Day (hours:mins)
+- Multi Engine: Night (hours:mins)
+- Instrument: Actual (hours:mins)
+- Instrument: Simulated/Hood (hours:mins)
+- P1/PIC time
+- Dual time
+- Co-pilot time
+- Instructor time
+- Day Landings (number)
+- Night Landings (number)
+- Remarks/Notes
+
+Extract EVERY flight entry visible. For each flight, return a JSON object.
+
+CRITICAL RULES:
+1. Times should be in decimal hours (e.g., 1:30 = 1.5, 0:45 = 0.75)
+2. Dates should be in YYYY-MM-DD format (convert from DD/MM/YY - assume 19xx for years 89-99, 20xx for 00-25)
+3. Registration should include the G- prefix
+4. Convert aerodrome names to ICAO codes where you recognise them
+5. If a field is empty or illegible, use null
+6. Include ALL rows even if partially filled
+
+Return ONLY a JSON array of objects, no other text. Each object should have these exact keys:
+{
+  "date": "YYYY-MM-DD",
+  "aircraft_type": "string",
+  "registration": "G-XXXX",
+  "pic_name": "string",
+  "capacity": "P1|P2|PUT|DUAL",
+  "from_icao": "XXXX",
+  "to_icao": "XXXX", 
+  "se_day": number or null,
+  "se_night": number or null,
+  "me_day": number or null,
+  "me_night": number or null,
+  "instrument_actual": number or null,
+  "instrument_sim": number or null,
+  "pic_time": number or null,
+  "dual_time": number or null,
+  "copilot_time": number or null,
+  "instructor_time": number or null,
+  "landings_day": number or null,
+  "landings_night": number or null,
+  "remarks": "string or null",
+  "confidence": 1-5,
+  "uncertain_fields": ["field1", "field2"]
+}
+
+CONFIDENCE SCORING (1-5):
+5 = All fields clearly legible, high confidence
+4 = Most fields clear, minor uncertainty on 1-2 fields
+3 = Several fields hard to read or guessed from context
+2 = Significant uncertainty, multiple guesses made
+1 = Very poor legibility, most fields uncertain`;
+
+      const processFiles = async (files) => {
+        const newPages = [];
+        for (const file of files) {
+          if (!file.type.startsWith('image/')) continue;
+          const base64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+          newPages.push({
+            id: Date.now() + Math.random(),
+            name: file.name,
+            base64: base64,
+            status: 'pending',
+            entries: []
+          });
+        }
+        setPages(prev => [...prev, ...newPages]);
+      };
+
+      const handleFileSelect = (e) => {
+        const files = Array.from(e.target.files);
+        processFiles(files);
+      };
+
+      const handleDragOver = (e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); };
+      const handleDragLeave = (e) => { e.preventDefault(); e.stopPropagation(); setDragOver(false); };
+      const handleDrop = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragOver(false);
+        const files = Array.from(e.dataTransfer.files);
+        processFiles(files);
+      };
+
+      const processPage = async (page) => {
+        setProcessing(true);
+        setCurrentPage(page.id);
+        setError(null);
+        
+        try {
+          const base64Data = page.base64.split(',')[1];
+          const mediaType = page.base64.match(/data:([^;]+);/)?.[1] || 'image/jpeg';
+          
+          // Use our proxy endpoint instead of calling Anthropic directly
+          const response = await fetch('/api/extract', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: 'claude-sonnet-4-20250514',
+              max_tokens: 4096,
+              messages: [{
+                role: 'user',
+                content: [
+                  { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64Data } },
+                  { type: 'text', text: extractionPrompt }
+                ]
+              }]
+            })
+          });
+          
+          const data = await response.json();
+          
+          if (data.error) {
+            throw new Error(data.error.message || data.error || 'API error');
+          }
+          
+          const responseText = data.content?.[0]?.text || '';
+          
+          let extractedEntries;
+          const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+          if (jsonMatch) {
+            extractedEntries = JSON.parse(jsonMatch[0]);
+          } else {
+            throw new Error('No JSON array found in response');
+          }
+          
+          // Remove old entries for this page first
+          setEntries(prev => prev.filter(e => e.pageId !== page.id));
+          
+          const entriesWithIds = extractedEntries.map((entry, idx) => ({
+            ...entry,
+            id: `${page.id}-${idx}`,
+            pageId: page.id,
+            pageName: page.name
+          }));
+          
+          setPages(prev => prev.map(p => 
+            p.id === page.id ? { ...p, status: 'complete', entries: entriesWithIds } : p
+          ));
+          
+          setEntries(prev => [...prev, ...entriesWithIds]);
+          
+        } catch (err) {
+          console.error('Processing error:', err);
+          setError(`Error processing ${page.name}: ${err.message}`);
+          setPages(prev => prev.map(p => 
+            p.id === page.id ? { ...p, status: 'error' } : p
+          ));
+        } finally {
+          setProcessing(false);
+          setCurrentPage(null);
+        }
+      };
+
+      const processAllPending = async () => {
+        const pendingPages = pages.filter(p => p.status === 'pending');
+        const startTime = Date.now();
+        let processed = 0;
+        
+        for (const page of pendingPages) {
+          await processPage(page);
+          processed++;
+          const elapsed = Date.now() - startTime;
+          const avgPerPage = elapsed / processed;
+          const remaining = pendingPages.length - processed;
+          setTimeEstimate(Math.round((avgPerPage * remaining) / 1000));
+        }
+        setTimeEstimate(null);
+      };
+
+      useEffect(() => {
+        if (autoProcess && pages.some(p => p.status === 'pending') && !processing) {
+          processAllPending();
+        }
+      }, [pages, autoProcess, processing]);
+
+      const getPageTotals = (pageId) => {
+        const pageEntries = entries.filter(e => e.pageId === pageId);
+        return {
+          count: pageEntries.length,
+          seDay: pageEntries.reduce((sum, e) => sum + (e.se_day || 0), 0),
+          seNight: pageEntries.reduce((sum, e) => sum + (e.se_night || 0), 0),
+          meDay: pageEntries.reduce((sum, e) => sum + (e.me_day || 0), 0),
+          meNight: pageEntries.reduce((sum, e) => sum + (e.me_night || 0), 0),
+          pic: pageEntries.reduce((sum, e) => sum + (e.pic_time || 0), 0),
+          dual: pageEntries.reduce((sum, e) => sum + (e.dual_time || 0), 0),
+          ldgDay: pageEntries.reduce((sum, e) => sum + (e.landings_day || 0), 0),
+          ldgNight: pageEntries.reduce((sum, e) => sum + (e.landings_night || 0), 0),
+          total: pageEntries.reduce((sum, e) => sum + (e.se_day || 0) + (e.se_night || 0) + (e.me_day || 0) + (e.me_night || 0), 0)
+        };
+      };
+
+      const updateEntry = (id, field, value) => {
+        setEntries(prev => {
+          const index = prev.findIndex(e => e.id === id);
+          if (index === -1) return prev;
+          const updated = [...prev];
+          updated[index] = { ...updated[index], [field]: value };
+          return updated;
+        });
+      };
+
+      const deleteEntry = (id) => {
+        setEntries(prev => prev.filter(e => e.id !== id));
+      };
+
+      const exportToCSV = () => {
+        try {
+          const headers = ['PILOTLOG_DATE','AC_MODEL','AC_REG','PILOT1_NAME','CAPACITY','AF_DEP','AF_ARR','TIME_TOTAL','TIME_PIC','TIME_DUAL','TIME_SIC','TIME_INSTRUCTOR','TIME_NIGHT','TIME_ACTUAL','TIME_HOOD','LDG_DAY','LDG_NIGHT','REMARKS','AC_SPSE','AC_SPME'];
+          const rows = entries.map(e => {
+            const totalTime = (e.se_day || 0) + (e.se_night || 0) + (e.me_day || 0) + (e.me_night || 0);
+            const nightTime = (e.se_night || 0) + (e.me_night || 0);
+            const isSingleEngine = (e.se_day || 0) + (e.se_night || 0) > 0;
+            const isMultiEngine = (e.me_day || 0) + (e.me_night || 0) > 0;
+            return [
+              e.date || '', e.aircraft_type || '', e.registration || '', e.pic_name || '', e.capacity || '',
+              normalizeAirfield(e.from_icao) || '', normalizeAirfield(e.to_icao) || '',
+              totalTime || '', e.pic_time || '', e.dual_time || '', e.copilot_time || '', e.instructor_time || '',
+              nightTime || '', e.instrument_actual || '', e.instrument_sim || '',
+              e.landings_day || '', e.landings_night || '',
+              `"${(e.remarks || '').replace(/"/g, '""')}"`,
+              isSingleEngine ? 'Yes' : '', isMultiEngine ? 'Yes' : ''
+            ].join(',');
+          });
+          const csvContent = [headers.join(','), ...rows].join('\n');
+          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `logbook_aero_import_${new Date().toISOString().split('T')[0]}.csv`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        } catch (err) {
+          console.error('CSV export error:', err);
+          setError('Failed to export CSV: ' + err.message);
+        }
+      };
+
+      const exportToExcel = () => {
+        try {
+          const regWarnings = getRegistrationWarnings();
+          const warningIds = new Set(regWarnings.flatMap(w => w.entryIds));
+          const escapeHtml = (str) => {
+            if (str === null || str === undefined) return '';
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+          };
+          const rows = entries.map(e => {
+            const totalTime = (e.se_day || 0) + (e.se_night || 0) + (e.me_day || 0) + (e.me_night || 0);
+            const timeValidation = validateTimes(e);
+            const hasRegWarning = warningIds.has(e.id);
+            let rowStyle = '';
+            if (e.confidence <= 2) rowStyle = 'background-color:#fecaca;';
+            else if (e.confidence === 3) rowStyle = 'background-color:#fef08a;';
+            else if (!timeValidation.valid || hasRegWarning) rowStyle = 'background-color:#fef3c7;';
+            return `<tr style="${rowStyle}"><td>${escapeHtml(e.date)}</td><td>${escapeHtml(e.aircraft_type)}</td><td>${escapeHtml(e.registration)}</td><td>${escapeHtml(e.pic_name)}</td><td>${escapeHtml(e.capacity)}</td><td>${escapeHtml(normalizeAirfield(e.from_icao))}</td><td>${escapeHtml(normalizeAirfield(e.to_icao))}</td><td>${e.se_day || ''}</td><td>${e.se_night || ''}</td><td>${e.me_day || ''}</td><td>${e.me_night || ''}</td><td>${e.instrument_actual || ''}</td><td>${e.instrument_sim || ''}</td><td>${e.pic_time || ''}</td><td>${e.dual_time || ''}</td><td>${e.copilot_time || ''}</td><td>${e.instructor_time || ''}</td><td>${e.landings_day || ''}</td><td>${e.landings_night || ''}</td><td><strong>${totalTime.toFixed(1)}</strong></td><td>${escapeHtml(e.remarks)}</td><td>${e.confidence || ''}</td><td>${timeValidation.valid ? 'OK' : escapeHtml(timeValidation.message)}</td><td>${hasRegWarning ? 'Check reg/type' : ''}</td></tr>`;
+          }).join('\n');
+          const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"><style>table { border-collapse: collapse; font-family: Arial, sans-serif; font-size: 11px; } th { background-color: #1e40af; color: white; font-weight: bold; padding: 8px; border: 1px solid #ccc; } td { padding: 6px; border: 1px solid #ccc; }</style></head><body><table><thead><tr><th>Date</th><th>Type</th><th>Reg</th><th>PIC Name</th><th>Capacity</th><th>From</th><th>To</th><th>SE Day</th><th>SE Night</th><th>ME Day</th><th>ME Night</th><th>Instr Act</th><th>Instr Sim</th><th>PIC Time</th><th>Dual</th><th>CoPilot</th><th>Instructor</th><th>Day Ldg</th><th>Ngt Ldg</th><th>Total</th><th>Remarks</th><th>Confidence</th><th>Time Check</th><th>Warnings</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
+          const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `logbook_review_${new Date().toISOString().split('T')[0]}.xls`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        } catch (err) {
+          console.error('Excel export error:', err);
+          setError('Failed to export Excel: ' + err.message);
+        }
+      };
+
+      const removePage = (pageId) => {
+        setPages(prev => prev.filter(p => p.id !== pageId));
+        setEntries(prev => prev.filter(e => e.pageId !== pageId));
+      };
+
+      const totalHours = entries.reduce((sum, e) => sum + (e.se_day || 0) + (e.se_night || 0) + (e.me_day || 0) + (e.me_night || 0), 0);
+
+      return (
+        <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)', color: '#e2e8f0', fontFamily: "'IBM Plex Sans', sans-serif", padding: '24px' }}>
+          <style>{`
+            .card { background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(71, 85, 105, 0.4); border-radius: 12px; backdrop-filter: blur(8px); }
+            .btn { padding: 10px 20px; border-radius: 8px; font-weight: 500; cursor: pointer; transition: all 0.2s; border: none; font-family: inherit; }
+            .btn-primary { background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3); }
+            .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4); }
+            .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+            .btn-success { background: linear-gradient(135deg, #10b981, #059669); color: white; }
+            .btn-ghost { background: transparent; color: #94a3b8; border: 1px solid rgba(71, 85, 105, 0.4); }
+            .btn-ghost:hover { background: rgba(71, 85, 105, 0.3); color: #e2e8f0; }
+            .input { background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(71, 85, 105, 0.4); color: #e2e8f0; padding: 8px 12px; border-radius: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 13px; }
+            .input:focus { outline: none; border-color: #3b82f6; }
+            .input.uncertain { border-color: rgba(251, 191, 36, 0.6); background: rgba(251, 191, 36, 0.1); }
+            .tab { padding: 12px 24px; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; color: #94a3b8; }
+            .tab:hover { color: #e2e8f0; }
+            .tab.active { color: #3b82f6; border-bottom-color: #3b82f6; }
+            .status-pending { background: rgba(234, 179, 8, 0.2); color: #fbbf24; padding: 4px 8px; border-radius: 4px; font-size: 11px; }
+            .status-complete { background: rgba(16, 185, 129, 0.2); color: #34d399; padding: 4px 8px; border-radius: 4px; font-size: 11px; }
+            .status-error { background: rgba(239, 68, 68, 0.2); color: #f87171; padding: 4px 8px; border-radius: 4px; font-size: 11px; }
+            .status-processing { background: rgba(59, 130, 246, 0.2); color: #60a5fa; padding: 4px 8px; border-radius: 4px; font-size: 11px; }
+            .table-row:hover { background: rgba(51, 65, 85, 0.3); }
+          `}</style>
+
+          <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '32px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ width: '48px', height: '48px', background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+                    <polyline points="14,2 14,8 20,8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                  </svg>
+                </div>
+                <div>
+                  <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 600 }}>Logbook Scanner</h1>
+                  <p style={{ margin: 0, color: '#64748b', fontSize: '14px' }}>Pooleys PPL → logbook.aero</p>
+                </div>
+              </div>
+              {entries.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '24px', fontWeight: 600, color: '#3b82f6' }}>{totalHours.toFixed(1)}</div>
+                    <div style={{ fontSize: '12px', color: '#64748b' }}>Total Hours</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '24px', fontWeight: 600, color: '#10b981' }}>{entries.length}</div>
+                    <div style={{ fontSize: '12px', color: '#64748b' }}>Flights</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Tabs */}
+            <div style={{ display: 'flex', borderBottom: '1px solid rgba(71, 85, 105, 0.4)', marginBottom: '24px' }}>
+              <div className={`tab ${view === 'upload' ? 'active' : ''}`} onClick={() => setView('upload')}>1. Upload Pages</div>
+              <div className={`tab ${view === 'review' ? 'active' : ''}`} onClick={() => setView('review')}>2. Review Entries ({entries.length})</div>
+              <div className={`tab ${view === 'export' ? 'active' : ''}`} onClick={() => setView('export')}>3. Export CSV</div>
+            </div>
+
+            {error && (
+              <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '8px', padding: '12px 16px', marginBottom: '24px', color: '#f87171' }}>
+                {error}
+              </div>
+            )}
+
+            {/* Upload View */}
+            {view === 'upload' && (
+              <div>
+                <div onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
+                  style={{ border: `2px dashed ${dragOver ? '#3b82f6' : 'rgba(71, 85, 105, 0.6)'}`, borderRadius: '12px', padding: '48px 24px', textAlign: 'center', background: dragOver ? 'rgba(59, 130, 246, 0.1)' : 'transparent', marginBottom: '24px' }}>
+                  <input id="file-input" type="file" accept="image/*" multiple onChange={handleFileSelect} style={{ display: 'none' }} />
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke={dragOver ? '#3b82f6' : '#64748b'} strokeWidth="1.5" style={{ marginBottom: '16px' }}>
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/>
+                    <line x1="12" y1="3" x2="12" y2="15"/>
+                  </svg>
+                  <div style={{ fontSize: '16px', marginBottom: '16px', color: dragOver ? '#3b82f6' : '#e2e8f0' }}>
+                    {dragOver ? 'Drop files here' : 'Drop logbook page photos here'}
+                  </div>
+                  <label htmlFor="file-input" className="btn btn-primary" style={{ cursor: 'pointer' }}>📷 Choose Photos</label>
+                </div>
+
+                {pages.length > 0 && (
+                  <div className="card" style={{ padding: '20px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                      <h3 style={{ margin: 0, fontSize: '16px' }}>Uploaded Pages ({pages.length})</h3>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#94a3b8', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={autoProcess} onChange={e => setAutoProcess(e.target.checked)} style={{ accentColor: '#3b82f6' }} />
+                          Auto-process
+                        </label>
+                        <button className="btn btn-primary" onClick={processAllPending} disabled={processing || !pages.some(p => p.status === 'pending')}>
+                          {processing ? (timeEstimate ? `Processing... ${timeEstimate}s` : 'Processing...') : `Extract All (${pages.filter(p => p.status === 'pending').length})`}
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {processing && (
+                      <div style={{ marginBottom: '16px' }}>
+                        <div style={{ height: '4px', background: 'rgba(59, 130, 246, 0.2)', borderRadius: '2px', overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${(pages.filter(p => p.status === 'complete').length / pages.length) * 100}%`, background: '#3b82f6', transition: 'width 0.3s' }}/>
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div style={{ display: 'grid', gap: '12px' }}>
+                      {pages.map(page => {
+                        const totals = getPageTotals(page.id);
+                        return (
+                          <div key={page.id} style={{ background: 'rgba(15, 23, 42, 0.4)', borderRadius: '8px', overflow: 'hidden' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '12px' }}>
+                              <img src={page.base64} alt={page.name} style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '6px' }} />
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontWeight: 500 }}>{page.name}</div>
+                                <div style={{ fontSize: '13px', color: '#64748b' }}>{page.status === 'complete' ? `${totals.count} entries` : 'Ready'}</div>
+                              </div>
+                              <span className={`status-${currentPage === page.id ? 'processing' : page.status}`}>
+                                {currentPage === page.id ? '⟳ Processing' : page.status}
+                              </span>
+                              <button className="btn btn-ghost" onClick={() => processPage(page)} disabled={processing} style={{ padding: '8px 12px' }}>
+                                {page.status === 'complete' ? 'Redo' : 'Extract'}
+                              </button>
+                              <button className="btn btn-ghost" onClick={() => removePage(page.id)} style={{ padding: '8px', color: '#f87171' }}>✕</button>
+                            </div>
+                            {page.status === 'complete' && totals.count > 0 && (
+                              <div style={{ display: 'flex', gap: '16px', padding: '8px 12px', background: 'rgba(15, 23, 42, 0.4)', borderTop: '1px solid rgba(71, 85, 105, 0.3)', fontSize: '12px', color: '#94a3b8', flexWrap: 'wrap' }}>
+                                <span><strong>Total:</strong> {totals.total.toFixed(1)}</span>
+                                <span><strong>PIC:</strong> {totals.pic.toFixed(1)}</span>
+                                <span><strong>Dual:</strong> {totals.dual.toFixed(1)}</span>
+                                <span><strong>Ldg:</strong> {totals.ldgDay}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Review View */}
+            {view === 'review' && (
+              <div className="card" style={{ overflow: 'hidden' }}>
+                {entries.length === 0 ? (
+                  <div style={{ padding: '48px', textAlign: 'center', color: '#64748b' }}>No entries yet. Upload and process logbook pages first.</div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ background: 'rgba(15, 23, 42, 0.6)' }}>
+                          {['⚠', 'Date', 'Type', 'Reg', 'PIC', 'Cap', 'From', 'To', 'SE Day', 'PIC', 'Dual', 'Ldg', 'Remarks', ''].map(h => (
+                            <th key={h} style={{ padding: '12px 8px', textAlign: 'left', fontWeight: 500, color: '#94a3b8' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {entries.map(entry => {
+                          const timeCheck = validateTimes(entry);
+                          return (
+                            <tr key={entry.id} className="table-row" style={{ borderTop: '1px solid rgba(71, 85, 105, 0.2)' }}>
+                              <td style={{ padding: '8px', textAlign: 'center' }}>
+                                {entry.confidence <= 2 ? '⚠️' : entry.confidence === 3 ? '⚡' : '●'}
+                              </td>
+                              <td style={{ padding: '8px' }}><input className="input" value={entry.date || ''} onChange={e => updateEntry(entry.id, 'date', e.target.value)} style={{ width: '100px' }}/></td>
+                              <td style={{ padding: '8px' }}><input className="input" value={entry.aircraft_type || ''} onChange={e => updateEntry(entry.id, 'aircraft_type', e.target.value)} style={{ width: '60px' }}/></td>
+                              <td style={{ padding: '8px' }}><input className="input" value={entry.registration || ''} onChange={e => updateEntry(entry.id, 'registration', e.target.value)} style={{ width: '70px' }}/></td>
+                              <td style={{ padding: '8px' }}><input className="input" value={entry.pic_name || ''} onChange={e => updateEntry(entry.id, 'pic_name', e.target.value)} style={{ width: '100px' }}/></td>
+                              <td style={{ padding: '8px' }}><input className="input" value={entry.capacity || ''} onChange={e => updateEntry(entry.id, 'capacity', e.target.value)} style={{ width: '50px' }}/></td>
+                              <td style={{ padding: '8px' }}><input className="input" value={entry.from_icao || ''} onChange={e => updateEntry(entry.id, 'from_icao', e.target.value)} style={{ width: '50px' }}/></td>
+                              <td style={{ padding: '8px' }}><input className="input" value={entry.to_icao || ''} onChange={e => updateEntry(entry.id, 'to_icao', e.target.value)} style={{ width: '50px' }}/></td>
+                              <td style={{ padding: '8px' }}><input className="input" type="number" step="0.1" value={entry.se_day || ''} onChange={e => updateEntry(entry.id, 'se_day', parseFloat(e.target.value) || null)} style={{ width: '50px' }}/></td>
+                              <td style={{ padding: '8px' }}><input className="input" type="number" step="0.1" value={entry.pic_time || ''} onChange={e => updateEntry(entry.id, 'pic_time', parseFloat(e.target.value) || null)} style={{ width: '50px' }}/></td>
+                              <td style={{ padding: '8px' }}><input className="input" type="number" step="0.1" value={entry.dual_time || ''} onChange={e => updateEntry(entry.id, 'dual_time', parseFloat(e.target.value) || null)} style={{ width: '50px' }}/></td>
+                              <td style={{ padding: '8px' }}><input className="input" type="number" value={entry.landings_day || ''} onChange={e => updateEntry(entry.id, 'landings_day', parseInt(e.target.value) || null)} style={{ width: '40px' }}/></td>
+                              <td style={{ padding: '8px' }}><input className="input" value={entry.remarks || ''} onChange={e => updateEntry(entry.id, 'remarks', e.target.value)} style={{ width: '120px' }}/></td>
+                              <td style={{ padding: '8px' }}><button className="btn btn-ghost" onClick={() => deleteEntry(entry.id)} style={{ padding: '4px 8px', color: '#f87171' }}>✕</button></td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Export View */}
+            {view === 'export' && (
+              <div className="card" style={{ padding: '32px', textAlign: 'center' }}>
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="1.5" style={{ marginBottom: '24px' }}>
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                <h2 style={{ margin: '0 0 8px', fontSize: '20px' }}>Ready to Export</h2>
+                <p style={{ color: '#64748b', marginBottom: '24px' }}>{entries.length} flights totalling {totalHours.toFixed(1)} hours</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', maxWidth: '500px', margin: '0 auto' }}>
+                  <button className="btn btn-success" onClick={exportToCSV} disabled={entries.length === 0} style={{ width: '100%' }}>Download CSV</button>
+                  <button className="btn btn-primary" onClick={exportToExcel} disabled={entries.length === 0} style={{ width: '100%' }}>Download Excel</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    ReactDOM.render(<LogbookScanner />, document.getElementById('root'));
+  </script>
+</body>
+</html>
